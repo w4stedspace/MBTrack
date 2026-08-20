@@ -28,17 +28,19 @@ const SESSION_TIMEOUT_MS = (parseFloat(process.env.SESSION_TIMEOUT_HOURS) || 6) 
 // ---- persistence helpers ----
 
 function defaultStats() {
+  const now = Date.now();
   return {
     wins: 0,
     losses: 0,
     mmr: 0,
     oopsAllScorpions: 0,
+    trackingStartedAt: now, // when lifetime tracking began, for !record
     session: {
       wins: 0,
       losses: 0,
       mmrChange: 0,
-      startedAt: Date.now(),
-      lastActivity: Date.now(),
+      startedAt: now, // when the current session began, for !session
+      lastActivity: now,
     },
   };
 }
@@ -56,6 +58,12 @@ function loadStats() {
   }
   if (typeof stats.oopsAllScorpions !== 'number') {
     stats.oopsAllScorpions = 0;
+  }
+  // Backfill for files created before we tracked a lifetime start date.
+  // We can't recover the real original date, so this is a best-effort
+  // "first time we noticed" fallback.
+  if (!stats.trackingStartedAt) {
+    stats.trackingStartedAt = Date.now();
   }
   return stats;
 }
@@ -80,21 +88,48 @@ function rolloverSessionIfStale(stats) {
   }
 }
 
+// Formats a timestamp as e.g. "Aug 20, 2026" — used for the lifetime
+// tracking start date, where only the day really matters.
+function formatDate(timestamp) {
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+// Formats a timestamp as e.g. "Aug 20, 2026, 7:15 PM" — used for session
+// start, where the time of day is useful too.
+function formatDateTime(timestamp) {
+  return new Date(timestamp).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatOops(count) {
+  return `Oops, all scorpions... ${count} time${count === 1 ? '' : 's'}!`;
+}
+
 function formatStats(stats) {
   const total = stats.wins + stats.losses;
   const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
-  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr} | Oops, all Scorpions...: ${stats.oopsAllScorpions}`;
+  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr} | ${formatOops(stats.oopsAllScorpions)} | Tracking since ${formatDate(stats.trackingStartedAt)}`;
 }
 
 function formatSession(stats) {
   const s = stats.session;
   const total = s.wins + s.losses;
+  const startedNote = `Session started ${formatDateTime(s.startedAt)}`;
   if (total === 0 && s.mmrChange === 0) {
-    return `No games recorded yet this session. | Oops All Scorpions: ${stats.oopsAllScorpions}`;
+    return `No games recorded yet this session. | ${formatOops(stats.oopsAllScorpions)} | ${startedNote}`;
   }
   const winrate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
   const sign = s.mmrChange >= 0 ? '+' : '';
-  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange} | Oops, all Scorpions...: ${stats.oopsAllScorpions}`;
+  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange} | ${formatOops(stats.oopsAllScorpions)} | ${startedNote}`;
 }
 
 // ---- auth guard for write endpoints ----
@@ -163,7 +198,7 @@ app.get('/api/session/winrate', (req, res) => {
 // GET /api/oopsallscorpions -> read-only, current count
 app.get('/api/oopsallscorpions', (req, res) => {
   const stats = loadStats();
-  res.type('text/plain').send(`Oops All Scorpions: ${stats.oopsAllScorpions}`);
+  res.type('text/plain').send(formatOops(stats.oopsAllScorpions));
 });
 
 // GET /api/oopsallscorpions/add?key=SECRET&amount=1 -> increments the count.
@@ -176,7 +211,7 @@ app.get('/api/oopsallscorpions/add', requireKey, (req, res) => {
   stats.oopsAllScorpions += delta;
   saveStats(stats);
 
-  res.type('text/plain').send(`🦂 Oops, all Scorpions...: ${stats.oopsAllScorpions}`);
+  res.type('text/plain').send(`🦂 ${formatOops(stats.oopsAllScorpions)}`);
 });
 
 // GET /api/oopsallscorpions/remove?key=SECRET&amount=1 -> decrements the
@@ -189,13 +224,13 @@ app.get('/api/oopsallscorpions/remove', requireKey, (req, res) => {
   stats.oopsAllScorpions = Math.max(0, stats.oopsAllScorpions - delta);
   saveStats(stats);
 
-  res.type('text/plain').send(`🦂 Oops, all Scorpions...: ${stats.oopsAllScorpions}`);
+  res.type('text/plain').send(`🦂 ${formatOops(stats.oopsAllScorpions)}`);
 });
 
 // GET /api/win?key=SECRET&args=25%20Y
 // Default combined behavior: records a win AND, if an amount is present in
 // `args`, applies it as an MMR gain in the same call. A trailing Y/N in
-// `args` also logs whether an Oops, all Scorpions... moment happened.
+// `args` also logs whether an Oops All Scorpions moment happened.
 // Examples of `args`: "25 Y", "Y", "25", "" (any order, either part optional).
 // `amount` is still accepted on its own for backward compatibility.
 app.get('/api/win', requireKey, (req, res) => {
@@ -221,14 +256,14 @@ app.get('/api/win', requireKey, (req, res) => {
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (+${amount} MMR)` : '';
-  const oopsNote = oops ? ` (+1 Oops, all Scorpions...)` : '';
+  const oopsNote = oops ? ' (Oops, all scorpions...)' : '';
   res.type('text/plain').send(`✅ Win added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 
 // GET /api/loss?key=SECRET&args=18%20Y
 // Default combined behavior: records a loss AND, if an amount is present in
 // `args`, subtracts it from MMR in the same call. A trailing Y/N in `args`
-// also logs whether an Oops, all Scorpions... moment happened.
+// also logs whether an Oops All Scorpions moment happened.
 // Examples of `args`: "18 Y", "Y", "18", "" (any order, either part optional).
 // `amount` is still accepted on its own for backward compatibility.
 app.get('/api/loss', requireKey, (req, res) => {
@@ -254,7 +289,7 @@ app.get('/api/loss', requireKey, (req, res) => {
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (-${amount} MMR)` : '';
-  const oopsNote = oops ? ` (+1 Oops, all Scorpions...)` : '';
+  const oopsNote = oops ? ' (Oops, all scorpions...)' : '';
   res.type('text/plain').send(`❌ Loss added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 

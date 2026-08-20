@@ -157,12 +157,20 @@ something happens, and it now also appears at the end of both `!record` and
 - `!removeoops` → subtracts 1 from the count
 - `!removeoops 2` → subtracts 2 from the count in one go (never goes below 0)
 
-`!record` and `!session` now both end with the current count, e.g.:
+`!record` and `!session` now both include the current count in this format,
+plus when tracking began:
 
 ```
-Record: 12W - 4L (75.0%) | MMR: 1540 | Oops All Scorpions: 7
-Session: 3W - 1L (75.0%) | MMR: +42 | Oops All Scorpions: 7
+Record: 12W - 4L (75.0%) | MMR: 1540 | Oops, all scorpions... 7 times! | Tracking since Jul 21, 2026
+Session: 3W - 1L (75.0%) | MMR: +42 | Oops, all scorpions... 7 times! | Session started Aug 20, 2026, 5:29 PM
 ```
+
+- `!record`'s date is the first time `!win`, `!loss`, `!mmrup`/`!mmrdown`/`!mmrset`,
+  or the Oops All Scorpions commands were ever used — i.e. when lifetime
+  tracking began.
+- `!session`'s date/time is when the *current* session started (either the
+  first activity after the inactivity timeout, or the last time
+  `!newsession` was run).
 
 ## 4. Optional tweaks
 
