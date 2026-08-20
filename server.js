@@ -83,7 +83,7 @@ function rolloverSessionIfStale(stats) {
 function formatStats(stats) {
   const total = stats.wins + stats.losses;
   const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
-  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr} | Oops All Scorpions: ${stats.oopsAllScorpions}`;
+  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr} | Oops, all Scorpions...: ${stats.oopsAllScorpions}`;
 }
 
 function formatSession(stats) {
@@ -94,7 +94,7 @@ function formatSession(stats) {
   }
   const winrate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
   const sign = s.mmrChange >= 0 ? '+' : '';
-  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange} | Oops All Scorpions: ${stats.oopsAllScorpions}`;
+  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange} | Oops, all Scorpions...: ${stats.oopsAllScorpions}`;
 }
 
 // ---- auth guard for write endpoints ----
@@ -176,7 +176,7 @@ app.get('/api/oopsallscorpions/add', requireKey, (req, res) => {
   stats.oopsAllScorpions += delta;
   saveStats(stats);
 
-  res.type('text/plain').send(`🦂 Oops All Scorpions: ${stats.oopsAllScorpions}`);
+  res.type('text/plain').send(`🦂 Oops, all Scorpions...: ${stats.oopsAllScorpions}`);
 });
 
 // GET /api/oopsallscorpions/remove?key=SECRET&amount=1 -> decrements the
@@ -189,13 +189,13 @@ app.get('/api/oopsallscorpions/remove', requireKey, (req, res) => {
   stats.oopsAllScorpions = Math.max(0, stats.oopsAllScorpions - delta);
   saveStats(stats);
 
-  res.type('text/plain').send(`🦂 Oops All Scorpions: ${stats.oopsAllScorpions}`);
+  res.type('text/plain').send(`🦂 Oops, all Scorpions...: ${stats.oopsAllScorpions}`);
 });
 
 // GET /api/win?key=SECRET&args=25%20Y
 // Default combined behavior: records a win AND, if an amount is present in
 // `args`, applies it as an MMR gain in the same call. A trailing Y/N in
-// `args` also logs whether an Oops All Scorpions moment happened.
+// `args` also logs whether an Oops, all Scorpions... moment happened.
 // Examples of `args`: "25 Y", "Y", "25", "" (any order, either part optional).
 // `amount` is still accepted on its own for backward compatibility.
 app.get('/api/win', requireKey, (req, res) => {
@@ -221,14 +221,14 @@ app.get('/api/win', requireKey, (req, res) => {
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (+${amount} MMR)` : '';
-  const oopsNote = oops ? ` (+1 Oops All Scorpions)` : '';
+  const oopsNote = oops ? ` (+1 Oops, all Scorpions...)` : '';
   res.type('text/plain').send(`✅ Win added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 
 // GET /api/loss?key=SECRET&args=18%20Y
 // Default combined behavior: records a loss AND, if an amount is present in
 // `args`, subtracts it from MMR in the same call. A trailing Y/N in `args`
-// also logs whether an Oops All Scorpions moment happened.
+// also logs whether an Oops, all Scorpions... moment happened.
 // Examples of `args`: "18 Y", "Y", "18", "" (any order, either part optional).
 // `amount` is still accepted on its own for backward compatibility.
 app.get('/api/loss', requireKey, (req, res) => {
@@ -254,7 +254,7 @@ app.get('/api/loss', requireKey, (req, res) => {
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (-${amount} MMR)` : '';
-  const oopsNote = oops ? ` (+1 Oops All Scorpions)` : '';
+  const oopsNote = oops ? ` (+1 Oops, all Scorpions...)` : '';
   res.type('text/plain').send(`❌ Loss added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 
