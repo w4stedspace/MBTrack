@@ -1,0 +1,12 @@
+{
+  "name": "nightbot-stats-tracker",
+  "version": "1.0.0",
+  "description": "Tiny API for tracking wins/losses/MMR via Nightbot custom commands",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
