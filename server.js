@@ -3,7 +3,7 @@
 // via $(urlfetch ...) from custom chat commands.
 //
 // Run locally:  npm install && npm start
-// Deploy it somewhere with a public HTTPS URL (Render, Railway, Fly.io, etc.)
+// Deploy it somewhere with a public HTTPS URL (Railway, Render, etc.)
 // so Nightbot can reach it.
 
 const express = require('express');
@@ -20,25 +20,77 @@ const SECRET_KEY = process.env.SECRET_KEY || 'change-me'; // used to protect wri
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'stats.json');
 
+// A "session" auto-resets after this many hours of no win/loss/MMR activity —
+// meant to roughly line up with "since I started streaming today". Override
+// with the SESSION_TIMEOUT_HOURS env var if you want a different cutoff.
+const SESSION_TIMEOUT_MS = (parseFloat(process.env.SESSION_TIMEOUT_HOURS) || 6) * 60 * 60 * 1000;
+
 // ---- persistence helpers ----
+
+function defaultStats() {
+  return {
+    wins: 0,
+    losses: 0,
+    mmr: 0,
+    session: {
+      wins: 0,
+      losses: 0,
+      mmrChange: 0,
+      startedAt: Date.now(),
+      lastActivity: Date.now(),
+    },
+  };
+}
 
 function loadStats() {
   if (!fs.existsSync(DATA_FILE)) {
-    const initial = { wins: 0, losses: 0, mmr: 0 };
+    const initial = defaultStats();
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
     return initial;
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  const stats = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  // Backfill in case this is an old stats.json from before sessions existed.
+  if (!stats.session) {
+    stats.session = defaultStats().session;
+  }
+  return stats;
 }
 
 function saveStats(stats) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
 }
 
+// Call this before applying any win/loss/MMR change. If enough time has
+// passed since the last change, treat it as the start of a new stream
+// session and zero out the session-only counters.
+function rolloverSessionIfStale(stats) {
+  const now = Date.now();
+  if (now - stats.session.lastActivity > SESSION_TIMEOUT_MS) {
+    stats.session = {
+      wins: 0,
+      losses: 0,
+      mmrChange: 0,
+      startedAt: now,
+      lastActivity: now,
+    };
+  }
+}
+
 function formatStats(stats) {
   const total = stats.wins + stats.losses;
   const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
   return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr}`;
+}
+
+function formatSession(stats) {
+  const s = stats.session;
+  const total = s.wins + s.losses;
+  if (total === 0 && s.mmrChange === 0) {
+    return 'No games recorded yet this session.';
+  }
+  const winrate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
+  const sign = s.mmrChange >= 0 ? '+' : '';
+  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange}`;
 }
 
 // ---- auth guard for write endpoints ----
@@ -52,61 +104,132 @@ function requireKey(req, res, next) {
 
 // ---- routes ----
 
-// GET /api/stats -> read-only, safe for anyone to trigger
+// GET /api/stats -> lifetime record, read-only, safe for anyone to trigger
 app.get('/api/stats', (req, res) => {
   const stats = loadStats();
   res.type('text/plain').send(formatStats(stats));
 });
 
-// GET /api/win?key=SECRET -> increments wins
+// GET /api/session -> current-stream-session record only, read-only
+app.get('/api/session', (req, res) => {
+  const stats = loadStats();
+  res.type('text/plain').send(formatSession(stats));
+});
+
+// GET /api/win?key=SECRET&amount=25
+// Default combined behavior: records a win AND, if `amount` is a valid
+// number, applies it as an MMR gain in the same call.
+// Omit `amount` to just record the win with no MMR change.
 app.get('/api/win', requireKey, (req, res) => {
   const stats = loadStats();
+  rolloverSessionIfStale(stats);
+
   stats.wins += 1;
+  stats.session.wins += 1;
+
+  const amount = parseInt(req.query.amount, 10);
+  const hasMmr = !isNaN(amount);
+  if (hasMmr) {
+    stats.mmr += amount;
+    stats.session.mmrChange += amount;
+  }
+
+  stats.session.lastActivity = Date.now();
   saveStats(stats);
-  res.type('text/plain').send(`✅ Win added! ${formatStats(stats)}`);
+
+  const mmrNote = hasMmr ? ` (+${amount} MMR)` : '';
+  res.type('text/plain').send(`✅ Win added!${mmrNote} ${formatStats(stats)}`);
 });
 
-// GET /api/loss?key=SECRET -> increments losses
+// GET /api/loss?key=SECRET&amount=18
+// Default combined behavior: records a loss AND, if `amount` is a valid
+// number, subtracts it from MMR in the same call.
+// Omit `amount` to just record the loss with no MMR change.
 app.get('/api/loss', requireKey, (req, res) => {
   const stats = loadStats();
+  rolloverSessionIfStale(stats);
+
   stats.losses += 1;
+  stats.session.losses += 1;
+
+  const amount = parseInt(req.query.amount, 10);
+  const hasMmr = !isNaN(amount);
+  if (hasMmr) {
+    stats.mmr -= amount;
+    stats.session.mmrChange -= amount;
+  }
+
+  stats.session.lastActivity = Date.now();
   saveStats(stats);
-  res.type('text/plain').send(`❌ Loss added! ${formatStats(stats)}`);
+
+  const mmrNote = hasMmr ? ` (-${amount} MMR)` : '';
+  res.type('text/plain').send(`❌ Loss added!${mmrNote} ${formatStats(stats)}`);
 });
 
-// GET /api/mmr/up/:amount?key=SECRET -> adds to MMR
-app.get('/api/mmr/up/:amount', requireKey, (req, res) => {
-  const amount = parseInt(req.params.amount, 10);
-  if (isNaN(amount)) return res.status(400).send('Amount must be a number');
+// GET /api/mmrup?key=SECRET&amount=25 -> adjusts MMR only, no win/loss change
+app.get('/api/mmrup', requireKey, (req, res) => {
+  const amount = parseInt(req.query.amount, 10);
+  if (isNaN(amount)) return res.status(400).send('amount must be a number');
+
   const stats = loadStats();
+  rolloverSessionIfStale(stats);
+
   stats.mmr += amount;
+  stats.session.mmrChange += amount;
+  stats.session.lastActivity = Date.now();
   saveStats(stats);
+
   res.type('text/plain').send(`📈 MMR +${amount}! ${formatStats(stats)}`);
 });
 
-// GET /api/mmr/down/:amount?key=SECRET -> subtracts from MMR
-app.get('/api/mmr/down/:amount', requireKey, (req, res) => {
-  const amount = parseInt(req.params.amount, 10);
-  if (isNaN(amount)) return res.status(400).send('Amount must be a number');
+// GET /api/mmrdown?key=SECRET&amount=18 -> adjusts MMR only, no win/loss change
+app.get('/api/mmrdown', requireKey, (req, res) => {
+  const amount = parseInt(req.query.amount, 10);
+  if (isNaN(amount)) return res.status(400).send('amount must be a number');
+
   const stats = loadStats();
+  rolloverSessionIfStale(stats);
+
   stats.mmr -= amount;
+  stats.session.mmrChange -= amount;
+  stats.session.lastActivity = Date.now();
   saveStats(stats);
+
   res.type('text/plain').send(`📉 MMR -${amount}! ${formatStats(stats)}`);
 });
 
-// GET /api/mmr/set/:value?key=SECRET -> sets MMR to an exact value
-app.get('/api/mmr/set/:value', requireKey, (req, res) => {
-  const value = parseInt(req.params.value, 10);
-  if (isNaN(value)) return res.status(400).send('Value must be a number');
+// GET /api/mmrset?key=SECRET&value=1500 -> sets MMR to an exact value,
+// no win/loss change. Session MMR-change tracks the delta this creates.
+app.get('/api/mmrset', requireKey, (req, res) => {
+  const value = parseInt(req.query.value, 10);
+  if (isNaN(value)) return res.status(400).send('value must be a number');
+
   const stats = loadStats();
+  rolloverSessionIfStale(stats);
+
+  const delta = value - stats.mmr;
   stats.mmr = value;
+  stats.session.mmrChange += delta;
+  stats.session.lastActivity = Date.now();
   saveStats(stats);
+
   res.type('text/plain').send(`🎯 MMR set to ${value}! ${formatStats(stats)}`);
 });
 
-// GET /api/reset?key=SECRET -> resets everything to zero
+// GET /api/newsession?key=SECRET -> manually starts a fresh session now,
+// useful if you want to reset session stats without waiting for the
+// inactivity timeout (e.g. going live again same day).
+app.get('/api/newsession', requireKey, (req, res) => {
+  const stats = loadStats();
+  const now = Date.now();
+  stats.session = { wins: 0, losses: 0, mmrChange: 0, startedAt: now, lastActivity: now };
+  saveStats(stats);
+  res.type('text/plain').send('🆕 New session started! Session stats reset to zero.');
+});
+
+// GET /api/reset?key=SECRET -> resets everything (lifetime + session) to zero
 app.get('/api/reset', requireKey, (req, res) => {
-  const stats = { wins: 0, losses: 0, mmr: 0 };
+  const stats = defaultStats();
   saveStats(stats);
   res.type('text/plain').send(`🔄 Stats reset. ${formatStats(stats)}`);
 });
