@@ -116,6 +116,14 @@ app.get('/api/session', (req, res) => {
   res.type('text/plain').send(formatSession(stats));
 });
 
+// GET /api/winrate -> lifetime winrate only, read-only
+app.get('/api/winrate', (req, res) => {
+  const stats = loadStats();
+  const total = stats.wins + stats.losses;
+  const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
+  res.type('text/plain').send(`Winrate: ${winrate}% (${stats.wins}W - ${stats.losses}L)`);
+});
+
 // GET /api/win?key=SECRET&amount=25
 // Default combined behavior: records a win AND, if `amount` is a valid
 // number, applies it as an MMR gain in the same call.

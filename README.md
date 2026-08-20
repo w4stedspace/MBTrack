@@ -82,6 +82,7 @@ and secret key):
 | `!mmrdown` | `$(urlfetch https://your-app.up.railway.app/api/mmrdown?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
 | `!mmrset` | `$(urlfetch https://your-app.up.railway.app/api/mmrset?key=YOUR_SECRET_KEY&value=$(1))` | Moderator |
 | `!record` | `$(urlfetch https://your-app.up.railway.app/api/stats)` | Everyone |
+| `!winrate` | `$(urlfetch https://your-app.up.railway.app/api/winrate)` | Everyone |
 | `!session` | `$(urlfetch https://your-app.up.railway.app/api/session)` | Everyone |
 | `!newsession` | `$(urlfetch https://your-app.up.railway.app/api/newsession?key=YOUR_SECRET_KEY)` | Moderator |
 | `!resetstats` | `$(urlfetch https://your-app.up.railway.app/api/reset?key=YOUR_SECRET_KEY)` | Moderator |
@@ -110,6 +111,7 @@ decay, etc.):
 **Session tracking:**
 
 - `!record` → shows your all-time record and current MMR (anyone can use this)
+- `!winrate` → shows just your lifetime winrate, e.g. `Winrate: 75.0% (3W - 1L)`
 - `!session` → shows wins/losses/MMR change *for the current stream session
   only*, e.g. `Session: 3W - 1L (75.0%) | MMR: +42`
 - A session automatically resets itself after 6 hours of no win/loss/MMR
