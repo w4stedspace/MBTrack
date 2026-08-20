@@ -76,8 +76,8 @@ and secret key):
 
 | Command | Message | User level |
 |---|---|---|
-| `!win` | `$(urlfetch https://your-app.up.railway.app/api/win?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
-| `!loss` | `$(urlfetch https://your-app.up.railway.app/api/loss?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
+| `!win` | `$(urlfetch https://your-app.up.railway.app/api/win?key=YOUR_SECRET_KEY&args=$(querystring))` | Moderator |
+| `!loss` | `$(urlfetch https://your-app.up.railway.app/api/loss?key=YOUR_SECRET_KEY&args=$(querystring))` | Moderator |
 | `!mmrup` | `$(urlfetch https://your-app.up.railway.app/api/mmrup?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
 | `!mmrdown` | `$(urlfetch https://your-app.up.railway.app/api/mmrdown?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
 | `!mmrset` | `$(urlfetch https://your-app.up.railway.app/api/mmrset?key=YOUR_SECRET_KEY&value=$(1))` | Moderator |
@@ -94,15 +94,25 @@ and secret key):
 ### Usage in chat
 
 **`!win` and `!loss` are combined by default** — give them an MMR amount and
-they update your win/loss count *and* your MMR in one command:
+they update your win/loss count *and* your MMR in one command. You can also
+add `Y` or `N` at the end to log whether an Oops All Scorpions moment
+happened in that same game — both parts are optional and can be given in
+either order:
 
-- `!win 25` → records a win **and** adds 25 MMR in one go
-- `!loss 18` → records a loss **and** subtracts 18 MMR in one go
+- `!win 25` → records a win **and** adds 25 MMR
+- `!win 25 Y` → records a win, adds 25 MMR, **and** adds 1 to Oops All Scorpions
+- `!win Y` → records a win and adds 1 to Oops All Scorpions, MMR untouched
+- `!win` → records a win only, nothing else changes
 
-Leave the amount off and they just update the win/loss count, MMR untouched:
+Same pattern for losses:
 
-- `!win` → records a win only
+- `!loss 18` → records a loss **and** subtracts 18 MMR
+- `!loss 18 Y` → records a loss, subtracts 18 MMR, **and** adds 1 to Oops All Scorpions
+- `!loss Y` → records a loss and adds 1 to Oops All Scorpions, MMR untouched
 - `!loss` → records a loss only
+
+`N` (or just leaving it off) means no scorpions happened — `!win 25 N` behaves
+the same as `!win 25`.
 
 **MMR-only commands** still exist separately for whenever you want to adjust
 MMR without it counting as a win or loss (placement changes, corrections,

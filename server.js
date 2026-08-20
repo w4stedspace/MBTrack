@@ -106,6 +106,25 @@ function requireKey(req, res, next) {
   next();
 }
 
+// Parses the free-form text after !win / !loss (e.g. "25 Y", "Y", "25", "")
+// into an optional MMR amount and a yes/no "did a scorpion happen" flag.
+// Order-independent and works with either token missing.
+function parseWinLossArgs(raw) {
+  const tokens = (raw || '').trim().split(/\s+/).filter(Boolean);
+  let amount = null;
+  let oops = false;
+  for (const token of tokens) {
+    if (/^-?\d+$/.test(token)) {
+      amount = parseInt(token, 10);
+    } else if (/^y(es)?$/i.test(token)) {
+      oops = true;
+    } else if (/^n(o)?$/i.test(token)) {
+      oops = false;
+    }
+  }
+  return { amount, oops };
+}
+
 // ---- routes ----
 
 // GET /api/stats -> lifetime record, read-only, safe for anyone to trigger
@@ -173,10 +192,12 @@ app.get('/api/oopsallscorpions/remove', requireKey, (req, res) => {
   res.type('text/plain').send(`🦂 Oops All Scorpions: ${stats.oopsAllScorpions}`);
 });
 
-// GET /api/win?key=SECRET&amount=25
-// Default combined behavior: records a win AND, if `amount` is a valid
-// number, applies it as an MMR gain in the same call.
-// Omit `amount` to just record the win with no MMR change.
+// GET /api/win?key=SECRET&args=25%20Y
+// Default combined behavior: records a win AND, if an amount is present in
+// `args`, applies it as an MMR gain in the same call. A trailing Y/N in
+// `args` also logs whether an Oops All Scorpions moment happened.
+// Examples of `args`: "25 Y", "Y", "25", "" (any order, either part optional).
+// `amount` is still accepted on its own for backward compatibility.
 app.get('/api/win', requireKey, (req, res) => {
   const stats = loadStats();
   rolloverSessionIfStale(stats);
@@ -184,24 +205,32 @@ app.get('/api/win', requireKey, (req, res) => {
   stats.wins += 1;
   stats.session.wins += 1;
 
-  const amount = parseInt(req.query.amount, 10);
-  const hasMmr = !isNaN(amount);
+  const { amount: parsedAmount, oops } = parseWinLossArgs(req.query.args);
+  const legacyAmount = parseInt(req.query.amount, 10);
+  const amount = parsedAmount !== null ? parsedAmount : (isNaN(legacyAmount) ? null : legacyAmount);
+  const hasMmr = amount !== null;
   if (hasMmr) {
     stats.mmr += amount;
     stats.session.mmrChange += amount;
+  }
+  if (oops) {
+    stats.oopsAllScorpions += 1;
   }
 
   stats.session.lastActivity = Date.now();
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (+${amount} MMR)` : '';
-  res.type('text/plain').send(`✅ Win added!${mmrNote} ${formatStats(stats)}`);
+  const oopsNote = oops ? ` (+1 Oops All Scorpions)` : '';
+  res.type('text/plain').send(`✅ Win added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 
-// GET /api/loss?key=SECRET&amount=18
-// Default combined behavior: records a loss AND, if `amount` is a valid
-// number, subtracts it from MMR in the same call.
-// Omit `amount` to just record the loss with no MMR change.
+// GET /api/loss?key=SECRET&args=18%20Y
+// Default combined behavior: records a loss AND, if an amount is present in
+// `args`, subtracts it from MMR in the same call. A trailing Y/N in `args`
+// also logs whether an Oops All Scorpions moment happened.
+// Examples of `args`: "18 Y", "Y", "18", "" (any order, either part optional).
+// `amount` is still accepted on its own for backward compatibility.
 app.get('/api/loss', requireKey, (req, res) => {
   const stats = loadStats();
   rolloverSessionIfStale(stats);
@@ -209,18 +238,24 @@ app.get('/api/loss', requireKey, (req, res) => {
   stats.losses += 1;
   stats.session.losses += 1;
 
-  const amount = parseInt(req.query.amount, 10);
-  const hasMmr = !isNaN(amount);
+  const { amount: parsedAmount, oops } = parseWinLossArgs(req.query.args);
+  const legacyAmount = parseInt(req.query.amount, 10);
+  const amount = parsedAmount !== null ? parsedAmount : (isNaN(legacyAmount) ? null : legacyAmount);
+  const hasMmr = amount !== null;
   if (hasMmr) {
     stats.mmr -= amount;
     stats.session.mmrChange -= amount;
+  }
+  if (oops) {
+    stats.oopsAllScorpions += 1;
   }
 
   stats.session.lastActivity = Date.now();
   saveStats(stats);
 
   const mmrNote = hasMmr ? ` (-${amount} MMR)` : '';
-  res.type('text/plain').send(`❌ Loss added!${mmrNote} ${formatStats(stats)}`);
+  const oopsNote = oops ? ` (+1 Oops All Scorpions)` : '';
+  res.type('text/plain').send(`❌ Loss added!${mmrNote}${oopsNote} ${formatStats(stats)}`);
 });
 
 // GET /api/mmrup?key=SECRET&amount=25 -> adjusts MMR only, no win/loss change
