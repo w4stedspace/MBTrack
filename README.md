@@ -84,8 +84,12 @@ and secret key):
 | `!record` | `$(urlfetch https://your-app.up.railway.app/api/stats)` | Everyone |
 | `!winrate` | `$(urlfetch https://your-app.up.railway.app/api/winrate)` | Everyone |
 | `!session` | `$(urlfetch https://your-app.up.railway.app/api/session)` | Everyone |
+| `!sessionwinrate` | `$(urlfetch https://your-app.up.railway.app/api/session/winrate)` | Everyone |
 | `!newsession` | `$(urlfetch https://your-app.up.railway.app/api/newsession?key=YOUR_SECRET_KEY)` | Moderator |
 | `!resetstats` | `$(urlfetch https://your-app.up.railway.app/api/reset?key=YOUR_SECRET_KEY)` | Moderator |
+| `!oopsallscorpions` | `$(urlfetch https://your-app.up.railway.app/api/oopsallscorpions)` | Everyone |
+| `!addoops` | `$(urlfetch https://your-app.up.railway.app/api/oopsallscorpions/add?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
+| `!removeoops` | `$(urlfetch https://your-app.up.railway.app/api/oopsallscorpions/remove?key=YOUR_SECRET_KEY&amount=$(1))` | Moderator |
 
 ### Usage in chat
 
@@ -114,6 +118,8 @@ decay, etc.):
 - `!winrate` → shows just your lifetime winrate, e.g. `Winrate: 75.0% (3W - 1L)`
 - `!session` → shows wins/losses/MMR change *for the current stream session
   only*, e.g. `Session: 3W - 1L (75.0%) | MMR: +42`
+- `!sessionwinrate` → shows just the winrate for the current stream session,
+  e.g. `Session winrate: 75.0% (3W - 1L)`
 - A session automatically resets itself after 6 hours of no win/loss/MMR
   activity, so it lines up with "since I went live today" without you having
   to do anything. Change this window with the `SESSION_TIMEOUT_HOURS`
@@ -126,6 +132,27 @@ decay, etc.):
 Setting write commands to "Moderator" level keeps viewers from spamming your
 wins/losses — only you or your mods can trigger them, ideally right after
 each match.
+
+**"Oops All Scorpions" — an independent counter:**
+
+This is a completely separate running total, not tied to wins, losses, MMR,
+or sessions in any way. It's just a number you bump up or down whenever
+something happens, and it now also appears at the end of both `!record` and
+`!session`.
+
+- `!oopsallscorpions` → shows the current count on its own, e.g.
+  `Oops All Scorpions: 7`
+- `!addoops` → adds 1 to the count
+- `!addoops 3` → adds 3 to the count in one go
+- `!removeoops` → subtracts 1 from the count
+- `!removeoops 2` → subtracts 2 from the count in one go (never goes below 0)
+
+`!record` and `!session` now both end with the current count, e.g.:
+
+```
+Record: 12W - 4L (75.0%) | MMR: 1540 | Oops All Scorpions: 7
+Session: 3W - 1L (75.0%) | MMR: +42 | Oops All Scorpions: 7
+```
 
 ## 4. Optional tweaks
 

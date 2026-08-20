@@ -32,6 +32,7 @@ function defaultStats() {
     wins: 0,
     losses: 0,
     mmr: 0,
+    oopsAllScorpions: 0,
     session: {
       wins: 0,
       losses: 0,
@@ -52,6 +53,9 @@ function loadStats() {
   // Backfill in case this is an old stats.json from before sessions existed.
   if (!stats.session) {
     stats.session = defaultStats().session;
+  }
+  if (typeof stats.oopsAllScorpions !== 'number') {
+    stats.oopsAllScorpions = 0;
   }
   return stats;
 }
@@ -79,18 +83,18 @@ function rolloverSessionIfStale(stats) {
 function formatStats(stats) {
   const total = stats.wins + stats.losses;
   const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
-  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr}`;
+  return `Record: ${stats.wins}W - ${stats.losses}L (${winrate}%) | MMR: ${stats.mmr} | Oops All Scorpions: ${stats.oopsAllScorpions}`;
 }
 
 function formatSession(stats) {
   const s = stats.session;
   const total = s.wins + s.losses;
   if (total === 0 && s.mmrChange === 0) {
-    return 'No games recorded yet this session.';
+    return `No games recorded yet this session. | Oops All Scorpions: ${stats.oopsAllScorpions}`;
   }
   const winrate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
   const sign = s.mmrChange >= 0 ? '+' : '';
-  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange}`;
+  return `Session: ${s.wins}W - ${s.losses}L (${winrate}%) | MMR: ${sign}${s.mmrChange} | Oops All Scorpions: ${stats.oopsAllScorpions}`;
 }
 
 // ---- auth guard for write endpoints ----
@@ -122,6 +126,51 @@ app.get('/api/winrate', (req, res) => {
   const total = stats.wins + stats.losses;
   const winrate = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : '0.0';
   res.type('text/plain').send(`Winrate: ${winrate}% (${stats.wins}W - ${stats.losses}L)`);
+});
+
+// GET /api/session/winrate -> winrate for the current stream session only
+app.get('/api/session/winrate', (req, res) => {
+  const stats = loadStats();
+  const s = stats.session;
+  const total = s.wins + s.losses;
+  const winrate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
+  res.type('text/plain').send(`Session winrate: ${winrate}% (${s.wins}W - ${s.losses}L)`);
+});
+
+// ---- "Oops All Scorpions" counter ----
+// A fully independent counter — not tied to wins/losses/MMR or sessions,
+// just a running total you can bump up or down whenever it happens.
+
+// GET /api/oopsallscorpions -> read-only, current count
+app.get('/api/oopsallscorpions', (req, res) => {
+  const stats = loadStats();
+  res.type('text/plain').send(`Oops All Scorpions: ${stats.oopsAllScorpions}`);
+});
+
+// GET /api/oopsallscorpions/add?key=SECRET&amount=1 -> increments the count.
+// amount defaults to 1 if omitted or invalid.
+app.get('/api/oopsallscorpions/add', requireKey, (req, res) => {
+  const amount = parseInt(req.query.amount, 10);
+  const delta = isNaN(amount) ? 1 : amount;
+
+  const stats = loadStats();
+  stats.oopsAllScorpions += delta;
+  saveStats(stats);
+
+  res.type('text/plain').send(`🦂 Oops All Scorpions: ${stats.oopsAllScorpions}`);
+});
+
+// GET /api/oopsallscorpions/remove?key=SECRET&amount=1 -> decrements the
+// count. amount defaults to 1 if omitted or invalid. Floors at 0.
+app.get('/api/oopsallscorpions/remove', requireKey, (req, res) => {
+  const amount = parseInt(req.query.amount, 10);
+  const delta = isNaN(amount) ? 1 : amount;
+
+  const stats = loadStats();
+  stats.oopsAllScorpions = Math.max(0, stats.oopsAllScorpions - delta);
+  saveStats(stats);
+
+  res.type('text/plain').send(`🦂 Oops All Scorpions: ${stats.oopsAllScorpions}`);
 });
 
 // GET /api/win?key=SECRET&amount=25
